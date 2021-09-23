@@ -31,6 +31,7 @@ typedef struct
   to_print_struct log;
 
   struct sockaddr_in *adrServ;
+
   //cli_struct* next;
 }cli_struct;
 
@@ -43,7 +44,7 @@ typedef struct
   to_print_struct print;
   to_print_struct log;
 
-  short listen_port;
+  //short listen_port;
   //serv_struct* next;
 }serv_struct;
 
@@ -55,6 +56,7 @@ int check_cmd(char* line);
 int print_line(to_print_struct* __toprint, const char *__restrict__ __format, ...);
 int printf_chat(char* username, const char *__restrict__ __format, ...);
 
+int create_socket(to_print_struct* print, char *port_str);
 
 
   to_print_struct* list_print[30];
@@ -199,20 +201,19 @@ void* thread_cli_f(void* arg)
   char CMD[] ="client";
   print_line(&cli->print,"%s: thread cli start\n", CMD);
   
-  signal(SIGPIPE, SIG_IGN);
   //int inputFd, log_file;
   ssize_t nbRead, nbRead_tot = 0;
  // char buf[BUF_SIZE];
   int run = 1;
 
-  int sock, ret;
   //struct sockaddr_in *adrServ;
   char ligne[LIGNE_MAX];
   int lgEcr;
 
 
 
-
+  signal(SIGPIPE, SIG_IGN);
+  int sock, ret;
   print_line(&cli->print,"%s: creating a socket\n", CMD);
   sock = socket (AF_INET, SOCK_STREAM, 0);
   if (sock < 0)
@@ -227,12 +228,12 @@ void* thread_cli_f(void* arg)
 	       stringIP(ntohl(cli->adrServ->sin_addr.s_addr)),
 	       ntohs(cli->adrServ->sin_port));
 
-  print_line(&cli->print,"%s: connecting the socket ...", CMD);
+  print_line(&cli->print,"%s: connecting the socket ...\n", CMD);
   ret = 0;
   while(connect(sock, (struct sockaddr *)cli->adrServ, sizeof(struct sockaddr_in)) < 0);
   if (ret < 0)
     erreur_IO("connect");
-  print_line(&cli->print,".. connecte\n");
+  print_line(&cli->print,"%s:.. connecte\n", CMD);
 
 
 while(run)
@@ -288,13 +289,13 @@ void* thread_serv_f(void* arg)
   int run = 1;
 
 
-  int ecoute, canal, ret;
+  char ligne[LIGNE_MAX];
+  int ecoute = create_socket(&serv->print, serv->port_str);
   struct sockaddr_in adrEcoute, adrClient;
   unsigned int lgAdrClient;
-  char ligne[LIGNE_MAX];
-  
-
-
+{
+/*
+  int ecoute, ret;
   serv->listen_port = (short)atoi(serv->port_str);
 
   print_line(&serv->print,"%s: creating a socket\n", CMD);
@@ -316,6 +317,13 @@ void* thread_serv_f(void* arg)
     erreur_IO("listen");
   
   print_line(&serv->print,"%s: accepting a connection\n", CMD);
+  */
+
+}
+
+
+
+  int canal; 
   lgAdrClient = sizeof(adrClient);
   canal = accept(ecoute, (struct sockaddr *)&adrClient, &lgAdrClient);
   if (canal < 0)
@@ -422,4 +430,35 @@ int print_line(to_print_struct* __toprint, const char *__restrict__ __format, ..
     __toprint->new_line = 1;
   }
   return done;
+}
+
+int create_socket(to_print_struct* print, char *port_str)
+{
+  char CMD[] ="serveur:socket";
+
+  int ecoute, ret;
+  struct sockaddr_in adrEcoute;
+  short listen_port = (short)atoi(port_str);
+
+  print_line(print,"%s: creating a socket\n", CMD);
+  ecoute = socket (AF_INET, SOCK_STREAM, 0);
+  if (ecoute < 0)
+    erreur_IO("socket");
+  
+  adrEcoute.sin_family = AF_INET;
+  adrEcoute.sin_addr.s_addr = INADDR_ANY;
+  adrEcoute.sin_port = htons(listen_port);
+  print_line(print,"%s: binding to INADDR_ANY address on port %d\n", CMD, listen_port);
+  ret = bind (ecoute,  (struct sockaddr *)&adrEcoute, sizeof(adrEcoute));
+  if (ret < 0)
+    erreur_IO("bind");
+  
+  print_line(print,"%s: listening to socket\n", CMD);
+  ret = listen (ecoute, 5);
+  if (ret < 0)
+    erreur_IO("listen");
+  
+  print_line(print,"%s: accepting a connection\n", CMD);
+  
+  return ecoute;
 }
