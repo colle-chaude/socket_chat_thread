@@ -6,6 +6,9 @@
 #include "pse.h"
 #include <regex.h>
 
+
+#define END_TRANSMIT 0x01
+#define CLEAR_TRANSMIT 0x02
 #define BUF_SIZE 1024
 #define PRINT_LINE_MAX LIGNE_MAX + 70
 //#define    CMD      "serveur"
@@ -28,7 +31,7 @@ typedef struct
   to_print_struct log;
 
   struct sockaddr_in *adrServ;
-  cli_struct* next;
+  //cli_struct* next;
 }cli_struct;
 
 typedef struct 
@@ -41,13 +44,14 @@ typedef struct
   to_print_struct log;
 
   short listen_port;
-  serv_struct* next;
+  //serv_struct* next;
 }serv_struct;
 
 
 
 void* thread_cli_f(void* arg);
 void* thread_serv_f(void* arg);
+int check_cmd(char* line);
 int print_line(to_print_struct* __toprint, const char *__restrict__ __format, ...);
 int printf_chat(char* username, const char *__restrict__ __format, ...);
 
@@ -134,6 +138,8 @@ int main(int argc, char *argv[]) {
         break;
       }
     }
+
+
   }
 
 
@@ -152,8 +158,8 @@ if(run)
 
 
   printf("creating thread\n");
-  int ret_cli = pthread_create(&pthread_cli, NULL, &thread_cli_f, &client_s);
-  int ret_serv = pthread_create(&pthread_serv, NULL, &thread_serv_f, &serveur_s);
+  pthread_create(&pthread_cli, NULL, &thread_cli_f, &client_s);
+  pthread_create(&pthread_serv, NULL, &thread_serv_f, &serveur_s);
   printf("thread created\n");
   while(run)
   {  
@@ -181,6 +187,10 @@ if(run)
   }
 
 }
+  if (close(log_file) == -1) {
+    erreur_IO("close output");
+  }
+
 }
 
 void* thread_cli_f(void* arg)
@@ -225,58 +235,44 @@ void* thread_cli_f(void* arg)
   print_line(&cli->print,".. connecte\n");
 
 
-  char fin_ex_str[] = "^fin\n?$";
-  regex_t fin_ex;
-  regcomp(&fin_ex, fin_ex_str, REG_EXTENDED|REG_NOSUB);
-
-
 while(run)
 {
-  //print_line(&cli->print,"<%s>:", pseudo_local);
-  //fflush(stdout);
   if (fgets(ligne, LIGNE_MAX, stdin) == NULL)
+  {
     print_line(&cli->print,"arret par CTRL-D\n");
+  }
+  else
+  {
+    lgEcr = ecrireLigne(sock, ligne); // send the message
+    print_line(&cli->log,"<%s>:%s", pseudo_local, ligne); // log the message
+    print_line(&cli->print,"");// renew username at the begining of the line
 
-  else {
-    lgEcr = ecrireLigne(sock, ligne);
-    print_line(&cli->log,"<%s>:%s", pseudo_local, ligne);
-    print_line(&cli->print,"");
     if (lgEcr == -1)
       erreur_IO("ecrireLigne");
-  
-  //  print_line(cli->line_to_print,"%s: %d bytes sent\n", CMD, lgEcr);
-  nbRead = strlen(ligne); 
-  nbRead_tot += nbRead;
-  int res_ex = regexec(&fin_ex, ligne, 0, NULL, 0);
-  //print_line(cli->line_to_print,"res ex :%s: %d\n",string, res_ex);
-  if( res_ex == 0)
-  {
-    run = 0;
 
-    print_line(&cli->print,"%s: End sended, close serveur\n", CMD);
-  }
-  char output[65+LIGNE_MAX];
-  int nbOutput = sprintf(output,"<%s>:%s", pseudo_local, ligne);
-  int nb_write = nbOutput;//write(log_file, output, nbOutput);
-      //printf(output);
-      if (nb_write != nbOutput) {
-        erreur_IO("write");
-      }
+    nbRead = strlen(ligne); 
+    nbRead_tot += nbRead;
 
-  }
+    int res_regex = check_cmd(ligne);
 
+    if(res_regex & END_TRANSMIT)
+    {
+      run = 0;
+      print_line(&cli->print,"%s: End sended, close serveur\n", CMD);
+    }
+    if(res_regex & CLEAR_TRANSMIT)
+    {
+      print_line(&cli->print,"\nclean\n");
+    }
 
-  if (nbRead == -1) {
-    erreur_IO("read");
   }
 
 }
 
   if (close(sock) == -1)
     erreur_IO("close");
-  //if (close(log_file) == -1) {
-   // erreur_IO("close output");
- // }
+  
+  
   print_line(&cli->print,"%s: %ld char have been transfered\n",CMD, nbRead_tot);
   return NULL;
 }
@@ -289,7 +285,6 @@ void* thread_serv_f(void* arg)
   
   
   ssize_t lgLue, lgLue_tot = 0;
-  //char buf[BUF_SIZE];
   int run = 1;
 
 
@@ -330,18 +325,6 @@ void* thread_serv_f(void* arg)
          stringIP(ntohl(adrClient.sin_addr.s_addr)),
          ntohs(adrClient.sin_port));
 
-
-
-
-
-
-  char fin_ex_str[] = "^fin\n?$";
-  char init_ex_str[] = "^init\n?$";
-  regex_t fin_ex;
-  regex_t init_ex;
-  regcomp(&init_ex, init_ex_str, REG_EXTENDED|REG_NOSUB);
-  regcomp(&fin_ex, fin_ex_str, REG_EXTENDED|REG_NOSUB);
-
   while (run)
   {
     lgLue = lireLigne(canal, ligne);
@@ -349,46 +332,34 @@ void* thread_serv_f(void* arg)
     if(lgLue > 0)
     {
       lgLue_tot+= lgLue;
-      char output[LIGNE_MAX + 65];
+      //char output[LIGNE_MAX + 65];
      // print_line(&serv->print,"%s: reception %ld octets : \"%s\"\n", CMD, lgLue, ligne);
       
-      if( regexec(&fin_ex, ligne, 0, NULL, 0) == 0)
-      {
-        run = 0;
-        print_line(&serv->print,"%s: End recieved, close serveur\n", CMD);
-      }
-      if( regexec(&init_ex, ligne, 0, NULL, 0) == 0)
-      {
-        print_line(&serv->print,"\nclean\n");
-      }
       if(ligne[lgLue-1] == '\0')
       {
         ligne[lgLue-1] = '\n';
         ligne[lgLue] = '\0';
       }
-      int nbOutput = sprintf(output,"<%s>:%s", serv->pseudo_distant, ligne);
-      print_line(&serv->print,"%s",output);
-      print_line(&serv->log,"%s",output);
-
       
-      //print_line(serv->line_to_print,"  ");
-      //print_line(&serv->print,"<%s>:", pseudo_local);
-      int nb_write = nbOutput;//write(log_file, output, nbOutput);
-      if (nb_write != nbOutput) {
-        erreur_IO("write");
-      }
-      //print_line(&serv->print,"%s: %ld char have been transfered\n",CMD, lgLue_tot);
+      print_line(&serv->print,"<%s>:%s", serv->pseudo_distant, ligne);
+      print_line(&serv->log,"<%s>:%s", serv->pseudo_distant, ligne);
+      //print_line(&serv->print,"%s",output);
+      //print_line(&serv->log,"%s",output);
 
-    }
-    else if (lgLue < 0)
-    {
-      erreur_IO("lireLigne");
-    }
-    else
-    {
+      int res_regex = check_cmd(ligne);
+
+      if(res_regex & END_TRANSMIT)
+      {
+        run = 0;
+        print_line(&serv->print,"%s: End recieved, close serveur\n", CMD);
+      }
+      if(res_regex & CLEAR_TRANSMIT)
+      {
+        print_line(&serv->print,"\nclean\n");
+      }
+
     }
   }
-
 
   
   if (close(canal) == -1)
@@ -397,19 +368,32 @@ void* thread_serv_f(void* arg)
   if (close(ecoute) == -1)
     erreur_IO("close ecoute");
 
-  if (close(log_file) == -1) {
-    erreur_IO("close output");
-  }
-  
-
-  
   //////////////////
   
-  if (lgLue == -1) {
-    erreur_IO("read");
-  }
   print_line(&serv->print,"%s: %ld char have been transfered\n",CMD, lgLue_tot);
   return NULL;
+}
+
+int check_cmd(char* line)
+{
+  int ret = 0;
+  char fin_ex_str[] = "^fin\n?$";
+  char init_ex_str[] = "^init\n?$";
+  regex_t fin_ex;
+  regex_t init_ex;
+  regcomp(&init_ex, init_ex_str, REG_EXTENDED|REG_NOSUB);
+  regcomp(&fin_ex, fin_ex_str, REG_EXTENDED|REG_NOSUB);
+
+  if( regexec(&fin_ex, line, 0, NULL, 0) == 0)
+  {
+    ret |= END_TRANSMIT;
+  }
+  if( regexec(&init_ex, line, 0, NULL, 0) == 0)
+  {
+    ret |= CLEAR_TRANSMIT;
+  }
+  
+  return ret;
 }
 
 int printf_chat(char* username, const char *__restrict__ __format, ...)
