@@ -1,5 +1,5 @@
-/* programme (c) M Kerrisk,
-   adapté par P. Lalevée */
+/* programme (c) M de Beaudrap
+*/
 
 #include <stdio.h>
 #include <stdarg.h>
@@ -28,6 +28,7 @@ typedef struct
   to_print_struct log;
 
   struct sockaddr_in *adrServ;
+  cli_struct* next;
 }cli_struct;
 
 typedef struct 
@@ -40,6 +41,7 @@ typedef struct
   to_print_struct log;
 
   short listen_port;
+  serv_struct* next;
 }serv_struct;
 
 
@@ -47,6 +49,7 @@ typedef struct
 void* thread_cli_f(void* arg);
 void* thread_serv_f(void* arg);
 int print_line(to_print_struct* __toprint, const char *__restrict__ __format, ...);
+int printf_chat(char* username, const char *__restrict__ __format, ...);
 
 
 
@@ -64,6 +67,7 @@ int main(int argc, char *argv[]) {
 
   int run = 1; 
 
+  pthread_t pthread_cli, pthread_serv;
   serv_struct serveur_s = {"2000", "distant"};
   cli_struct client_s = {"localhost", "2000"};
 
@@ -146,7 +150,6 @@ if(run)
   }
 
 
-  pthread_t pthread_cli, pthread_serv;
 
   printf("creating thread\n");
   int ret_cli = pthread_create(&pthread_cli, NULL, &thread_cli_f, &client_s);
@@ -158,8 +161,11 @@ if(run)
     {
       if(list_print[i]->flag && list_print[i]->new_line)
       {
-        printf(list_print[i]->line);
-        fflush(stdout);
+        //printf("\r");
+        //printf(list_print[i]->line);
+        //printf("<%s>:", pseudo_local);
+        //fflush(stdout);
+        printf_chat(pseudo_local, list_print[i]->line);
         list_print[i]->new_line = 0;
       }
     }  
@@ -167,8 +173,7 @@ if(run)
     {
       if(list_log[i]->flag && list_log[i]->new_line)
       {
-        printf(list_log[i]->line);
-        fflush(stdout);
+        write(log_file, list_log[i]->line, strlen(list_log[i]->line));
         list_log[i]->new_line = 0;
       }
     }  
@@ -181,7 +186,7 @@ if(run)
 void* thread_cli_f(void* arg)
 {
   cli_struct* cli = (cli_struct*) arg;
-  char CMD[] ="\rclient";
+  char CMD[] ="client";
   print_line(&cli->print,"%s: thread cli start\n", CMD);
   
   signal(SIGPIPE, SIG_IGN);
@@ -227,13 +232,15 @@ void* thread_cli_f(void* arg)
 
 while(run)
 {
-  print_line(&cli->print,"<%s>:", pseudo_local);
+  //print_line(&cli->print,"<%s>:", pseudo_local);
   //fflush(stdout);
   if (fgets(ligne, LIGNE_MAX, stdin) == NULL)
     print_line(&cli->print,"arret par CTRL-D\n");
 
   else {
     lgEcr = ecrireLigne(sock, ligne);
+    print_line(&cli->log,"<%s>:%s", pseudo_local, ligne);
+    print_line(&cli->print,"");
     if (lgEcr == -1)
       erreur_IO("ecrireLigne");
   
@@ -277,7 +284,7 @@ while(run)
 void* thread_serv_f(void* arg)
 {
   serv_struct* serv = (serv_struct*) arg;
-  char CMD[] ="\rserveur";
+  char CMD[] ="serveur";
   print_line(&serv->print,"%s: thread serv start\n", CMD);
   
   
@@ -360,9 +367,12 @@ void* thread_serv_f(void* arg)
         ligne[lgLue] = '\0';
       }
       int nbOutput = sprintf(output,"<%s>:%s", serv->pseudo_distant, ligne);
-      print_line(&serv->print,"\r%s",output);
+      print_line(&serv->print,"%s",output);
+      print_line(&serv->log,"%s",output);
+
+      
       //print_line(serv->line_to_print,"  ");
-      print_line(&serv->print,"<%s>:", pseudo_local);
+      //print_line(&serv->print,"<%s>:", pseudo_local);
       int nb_write = nbOutput;//write(log_file, output, nbOutput);
       if (nb_write != nbOutput) {
         erreur_IO("write");
@@ -400,6 +410,19 @@ void* thread_serv_f(void* arg)
   }
   print_line(&serv->print,"%s: %ld char have been transfered\n",CMD, lgLue_tot);
   return NULL;
+}
+
+int printf_chat(char* username, const char *__restrict__ __format, ...)
+{
+    int done;
+    printf("\r");
+    va_list args;
+    va_start(args, __format);
+    done = vprintf(__format, args);
+    printf("<%s>:", username);
+    fflush(stdout);
+    return done;
+
 }
 
 int print_line(to_print_struct* __toprint, const char *__restrict__ __format, ...)
