@@ -220,7 +220,7 @@ void* thread_cli_f(void* arg)
 {
   cli_struct* cli = (cli_struct*) arg;
   char CMD[] ="client";
-  print_line(&cli->print,"%s: thread cli start\n", CMD);
+  sprintf_fifo_thread(cli->print_buff,"%s: thread cli start\n", CMD);
   
   //int inputFd, log_file;
   ssize_t nbRead, nbRead_tot = 0;
@@ -235,39 +235,39 @@ void* thread_cli_f(void* arg)
 
   signal(SIGPIPE, SIG_IGN);
   int sock, ret;
-  print_line(&cli->print,"%s: creating a socket\n", CMD);
+  sprintf_fifo_thread(cli->print_buff,"%s: creating a socket\n", CMD);
   sock = socket (AF_INET, SOCK_STREAM, 0);
   if (sock < 0)
     erreur_IO("socket");
 
-  print_line(&cli->print,"%s: DNS resolving for %s, port %s\n", CMD, cli->addr_str, cli->port_str);
+  sprintf_fifo_thread(cli->print_buff,"%s: DNS resolving for %s, port %s\n", CMD, cli->addr_str, cli->port_str);
   cli->adrServ = resolv(cli->addr_str, cli->port_str);
   if (cli->adrServ == NULL)
     erreur("adresse %s port %s inconnus\n", cli->addr_str, cli->port_str);
 
-  print_line(&cli->print,"%s: adr %s, port %hu\n", CMD,
+  sprintf_fifo_thread(cli->print_buff,"%s: adr %s, port %hu\n", CMD,
 	       stringIP(ntohl(cli->adrServ->sin_addr.s_addr)),
 	       ntohs(cli->adrServ->sin_port));
 
-  print_line(&cli->print,"%s: connecting the socket ...\n", CMD);
+  sprintf_fifo_thread(cli->print_buff,"%s: connecting the socket ...\n", CMD);
   ret = 0;
   while(connect(sock, (struct sockaddr *)cli->adrServ, sizeof(struct sockaddr_in)) < 0);
   if (ret < 0)
     erreur_IO("connect");
-  print_line(&cli->print,"%s:.. connecte\n", CMD);
+  sprintf_fifo_thread(cli->print_buff,"%s:.. connecte\n", CMD);
 
 
 while(run)
 {
   if (fgets(ligne, LIGNE_MAX, stdin) == NULL)
   {
-    print_line(&cli->print,"arret par CTRL-D\n");
+    sprintf_fifo_thread(cli->print_buff,"arret par CTRL-D\n");
   }
   else
   {
     lgEcr = ecrireLigne(sock, ligne); // send the message
-    print_line(&cli->log,"<%s>:%s", pseudo_local, ligne); // log the message
-    print_line(&cli->print,"");// renew username at the begining of the line
+    sprintf_fifo_thread(cli->log_buff,"<%s>:%s", pseudo_local, ligne); // log the message
+    sprintf_fifo_thread(cli->print_buff,"");// renew username at the begining of the line
 
     if (lgEcr == -1)
       erreur_IO("ecrireLigne");
@@ -280,11 +280,11 @@ while(run)
     if(res_regex & END_TRANSMIT)
     {
       run = 0;
-      print_line(&cli->print,"%s: End sended, close serveur\n", CMD);
+      sprintf_fifo_thread(cli->print_buff,"%s: End sended, close serveur\n", CMD);
     }
     if(res_regex & CLEAR_TRANSMIT)
     {
-      print_line(&cli->print,"\nclean\n");
+      sprintf_fifo_thread(cli->print_buff,"\nclean\n");
     }
 
   }
@@ -295,7 +295,7 @@ while(run)
     erreur_IO("close");
   
   
-  print_line(&cli->print,"%s: %ld char have been transfered\n",CMD, nbRead_tot);
+  sprintf_fifo_thread(cli->print_buff,"%s: %ld char have been transfered\n",CMD, nbRead_tot);
   return NULL;
 }
 
@@ -303,7 +303,7 @@ void* thread_serv_f(void* arg)
 {
   serv_struct* serv = (serv_struct*) arg;
   char CMD[] ="serveur";
-  print_line(&serv->print,"%s: thread serv start\n", CMD);
+  sprintf_fifo_thread(serv->print_buff,"%s: thread serv start\n", CMD);
   
   
   ssize_t lgLue, lgLue_tot = 0;
@@ -327,7 +327,7 @@ void* thread_serv_f(void* arg)
 
   
   
-  print_line(&serv->print,"%s: adr %s, listen_port %hu\n", CMD,
+  sprintf_fifo_thread(serv->print_buff,"%s: adr %s, listen_port %hu\n", CMD,
          stringIP(ntohl(adrClient.sin_addr.s_addr)),
          ntohs(adrClient.sin_port));
 
@@ -339,7 +339,7 @@ void* thread_serv_f(void* arg)
     {
       lgLue_tot+= lgLue;
       //char output[LIGNE_MAX + 65];
-     // print_line(&serv->print,"%s: reception %ld octets : \"%s\"\n", CMD, lgLue, ligne);
+     // sprintf_fifo_thread(serv->print_buff,"%s: reception %ld octets : \"%s\"\n", CMD, lgLue, ligne);
        usleep(10000);
       if(ligne[lgLue-1] == '\0')
       {
@@ -349,23 +349,23 @@ void* thread_serv_f(void* arg)
       
       
       //sprintf_fifo_thread(serv->log_buff,"%d_<%s>:%s", ret_sprint, serv->pseudo_distant, ligne);
-      //print_line(&serv->print,"<%s>:%s", serv->pseudo_distant, ligne);
-      //print_line(&serv->log,"<%s>:%s", serv->pseudo_distant, ligne);
-      //print_line(&serv->print,"%s",output);
-      //print_line(&serv->log,"%s",output);
+      //sprintf_fifo_thread(serv->print_buff,"<%s>:%s", serv->pseudo_distant, ligne);
+      //sprintf_fifo_thread(serv->log_buff,"<%s>:%s", serv->pseudo_distant, ligne);
+      //sprintf_fifo_thread(serv->print_buff,"%s",output);
+      //sprintf_fifo_thread(serv->log_buff,"%s",output);
 
       int res_regex = check_cmd(ligne);
 
       if(res_regex & END_TRANSMIT)
       {
         run = 0;
-        print_line(&serv->print,"%s: End recieved, close serveur\n", CMD);
+        sprintf_fifo_thread(serv->print_buff,"%s: End recieved, close serveur\n", CMD);
       }
       if(res_regex & CLEAR_TRANSMIT)
       {
-        print_line(&serv->print,"\nclean\n");
+        sprintf_fifo_thread(serv->print_buff,"\nclean\n");
       }
-      int ret_sprint = sprintf_fifo_thread(serv->print_buff,"<%s>:%s", serv->pseudo_distant, ligne);
+      sprintf_fifo_thread(serv->print_buff,"<%s>:%s", serv->pseudo_distant, ligne);
       sprintf_fifo_thread(serv->log_buff,"<%s>:%s", serv->pseudo_distant, ligne);
 
     }
@@ -380,7 +380,7 @@ void* thread_serv_f(void* arg)
 
   //////////////////
   
-  print_line(&serv->print,"%s: %ld char have been transfered\n",CMD, lgLue_tot);
+  sprintf_fifo_thread(serv->print_buff,"%s: %ld char have been transfered\n",CMD, lgLue_tot);
   return NULL;
 }
 
