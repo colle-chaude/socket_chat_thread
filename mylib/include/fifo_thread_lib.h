@@ -14,9 +14,8 @@
 typedef struct
 {
   pthread_mutex_t mutex_busy; // lock fifo while modifying 
-  sem_t sem_available; // semaphore withc list the avalaible space
-  sem_t sem_write;
-  sem_t sem_read;
+  sem_t sem_write; // nuber of line available
+  sem_t sem_read; // nuber of line in the buffer
   char** line; // the buffer of lines
   size_t pt_read; // read index (should never be equal or bigger than size_fifo)
   size_t pt_write; // write index (should never be equal or bigger than size_fifo)
