@@ -340,15 +340,15 @@ void* thread_serv_f(void* arg)
       lgLue_tot+= lgLue;
       //char output[LIGNE_MAX + 65];
      // print_line(&serv->print,"%s: reception %ld octets : \"%s\"\n", CMD, lgLue, ligne);
-      
+       usleep(10000);
       if(ligne[lgLue-1] == '\0')
       {
         ligne[lgLue-1] = '\n';
         ligne[lgLue] = '\0';
       }
       
-      sprintf_fifo_thread(serv->print_buff,"<%s>:%s", serv->pseudo_distant, ligne);
-      sprintf_fifo_thread(serv->log_buff,"<%s>:%s", serv->pseudo_distant, ligne);
+      
+      //sprintf_fifo_thread(serv->log_buff,"%d_<%s>:%s", ret_sprint, serv->pseudo_distant, ligne);
       //print_line(&serv->print,"<%s>:%s", serv->pseudo_distant, ligne);
       //print_line(&serv->log,"<%s>:%s", serv->pseudo_distant, ligne);
       //print_line(&serv->print,"%s",output);
@@ -365,6 +365,8 @@ void* thread_serv_f(void* arg)
       {
         print_line(&serv->print,"\nclean\n");
       }
+      int ret_sprint = sprintf_fifo_thread(serv->print_buff,"<%s>:%s", serv->pseudo_distant, ligne);
+      sprintf_fifo_thread(serv->log_buff,"<%s>:%s", serv->pseudo_distant, ligne);
 
     }
   }
