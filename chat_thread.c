@@ -168,34 +168,6 @@ void* thread_cli_f(void* arg)
 
   int sock = connect_socket(cli->print_buff, cli->addr_str, cli->port_str);
 
-/*
-  signal(SIGPIPE, SIG_IGN);
-  int sock, ret;
-  sprintf_fifo_thread(cli->print_buff,"%s: creating a socket\n", CMD);
-
-  struct sockaddr_in *adrServ;
-
-  sock = socket (AF_INET, SOCK_STREAM, 0);
-  if (sock < 0)
-    erreur_IO("socket");
-
-  sprintf_fifo_thread(cli->print_buff,"%s: DNS resolving for %s, port %s\n", CMD, cli->addr_str, cli->port_str);
-  adrServ = resolv(cli->addr_str, cli->port_str);
-  if (adrServ == NULL)
-    erreur("adresse %s port %s inconnus\n", cli->addr_str, cli->port_str);
-
-  sprintf_fifo_thread(cli->print_buff,"%s: adr %s, port %hu\n", CMD,
-	       stringIP(ntohl(adrServ->sin_addr.s_addr)),
-	       ntohs(adrServ->sin_port));
-
-  sprintf_fifo_thread(cli->print_buff,"%s: connecting the socket ...\n", CMD);
-  ret = 0;
-  while(connect(sock, (struct sockaddr *)adrServ, sizeof(struct sockaddr_in)) < 0);
-  if (ret < 0)
-    erreur_IO("connect");
-  sprintf_fifo_thread(cli->print_buff,"%s:.. connecte\n", CMD);
-*/
-
 while(run)
 {
   if (fgets(ligne, LIGNE_MAX, stdin) == NULL)
