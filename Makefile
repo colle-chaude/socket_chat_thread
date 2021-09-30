@@ -4,7 +4,8 @@ include ../Makefile.inc
 
 EXE = chat_thread
 
-${EXE): ${PSE_LIB}
+${EXE):${MELC_LIB} : ${PSE_LIB}
+
 
 all: ${EXE}
 
