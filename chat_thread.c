@@ -13,16 +13,6 @@
 #define BUF_SIZE 1024
 #define PRINT_LINE_MAX LIGNE_MAX + 70
 #define NB_LINE_PRINT 20
-//#define    CMD      "serveur"
-
-
-typedef struct
-{
-  char line[PRINT_LINE_MAX];
-  int new_line;
-  int flag;
-}to_print_struct;
-
 
 typedef struct
 {
@@ -31,12 +21,10 @@ typedef struct
   char addr_str[30];
   char port_str[8];
 
-  to_print_struct print;
-  to_print_struct log;
 
   struct sockaddr_in *adrServ;
 
-  //cli_struct* next;
+  //cli_struct* next;  // TODO chainer les instances
 }cli_struct;
 
 typedef struct 
@@ -46,12 +34,6 @@ typedef struct
   char port_str[8];
   char pseudo_distant[30];
 
-
-  to_print_struct print;
-  to_print_struct log;
-
-  //short listen_port;
-  //serv_struct* next;
 }serv_struct;
 
 
@@ -59,14 +41,12 @@ typedef struct
 void* thread_cli_f(void* arg);
 void* thread_serv_f(void* arg);
 int check_cmd(char* line);
-int print_line(to_print_struct* __toprint, const char *__restrict__ __format, ...);
 int printf_chat(char* username, const char *__restrict__ __format, ...);
 
-int create_socket(to_print_struct* print, char *port_str);
+int connect_socket(fifo_thread_t* fifo_print, const char* addr_str, const char* port_str);
+int create_socket(fifo_thread_t* fifo_print, const char *port_str);
 
 
-  to_print_struct* list_print[30];
-  to_print_struct* list_log[30];
   int nb_print = 0;
   int nb_log = 0;
 
@@ -89,25 +69,6 @@ int main(int argc, char *argv[]) {
 
   serv_struct serveur_s = {&fifo_print, &fifo_log, "2000", "distant"};
   cli_struct client_s = {&fifo_print, &fifo_log, "localhost", "2000"};
-
-  list_log[nb_log++] = &serveur_s.log;
-  list_log[nb_log++] = &client_s.log;
-
-  list_print[nb_print++] = &serveur_s.print;
-  list_print[nb_print++] = &client_s.print;
-
-
-  for(int i = 0; i< nb_log; i++)
-  {
-    list_log[i]->flag = 1;
-    list_log[i]->new_line = 0;
-  }
-  for(int i = 0; i< nb_print; i++)
-  {
-    list_print[i]->flag = 1;
-    list_print[i]->new_line = 0;
-  }
-
 
   regex_t  arg_ex;
   regmatch_t arg_match[2];
@@ -184,29 +145,6 @@ if(run)
     if(pop_fifo_thread(&fifo_log, line_to_print))
       write(log_file, line_to_print, strlen(line_to_print));
 
-
-
-    for(int i = 0; i < nb_print; i++)
-    {
-      if(list_print[i]->flag && list_print[i]->new_line)
-      {
-        //printf("\r");
-        //printf(list_print[i]->line);
-        //printf("<%s>:", pseudo_local);
-        //fflush(stdout);
-        printf_chat(pseudo_local, list_print[i]->line);
-        list_print[i]->new_line = 0;
-      }
-    }  
-    for(int i = 0; i < nb_log; i++)
-    {
-      if(list_log[i]->flag && list_log[i]->new_line)
-      {
-        write(log_file, list_log[i]->line, strlen(list_log[i]->line));
-        list_log[i]->new_line = 0;
-      }
-    }  
-    
   }
 
 }
@@ -222,40 +160,41 @@ void* thread_cli_f(void* arg)
   char CMD[] ="client";
   sprintf_fifo_thread(cli->print_buff,"%s: thread cli start\n", CMD);
   
-  //int inputFd, log_file;
   ssize_t nbRead, nbRead_tot = 0;
- // char buf[BUF_SIZE];
   int run = 1;
 
-  //struct sockaddr_in *adrServ;
   char ligne[LIGNE_MAX];
   int lgEcr;
 
+  int sock = connect_socket(cli->print_buff, cli->addr_str, cli->port_str);
 
-
+/*
   signal(SIGPIPE, SIG_IGN);
   int sock, ret;
   sprintf_fifo_thread(cli->print_buff,"%s: creating a socket\n", CMD);
+
+  struct sockaddr_in *adrServ;
+
   sock = socket (AF_INET, SOCK_STREAM, 0);
   if (sock < 0)
     erreur_IO("socket");
 
   sprintf_fifo_thread(cli->print_buff,"%s: DNS resolving for %s, port %s\n", CMD, cli->addr_str, cli->port_str);
-  cli->adrServ = resolv(cli->addr_str, cli->port_str);
-  if (cli->adrServ == NULL)
+  adrServ = resolv(cli->addr_str, cli->port_str);
+  if (adrServ == NULL)
     erreur("adresse %s port %s inconnus\n", cli->addr_str, cli->port_str);
 
   sprintf_fifo_thread(cli->print_buff,"%s: adr %s, port %hu\n", CMD,
-	       stringIP(ntohl(cli->adrServ->sin_addr.s_addr)),
-	       ntohs(cli->adrServ->sin_port));
+	       stringIP(ntohl(adrServ->sin_addr.s_addr)),
+	       ntohs(adrServ->sin_port));
 
   sprintf_fifo_thread(cli->print_buff,"%s: connecting the socket ...\n", CMD);
   ret = 0;
-  while(connect(sock, (struct sockaddr *)cli->adrServ, sizeof(struct sockaddr_in)) < 0);
+  while(connect(sock, (struct sockaddr *)adrServ, sizeof(struct sockaddr_in)) < 0);
   if (ret < 0)
     erreur_IO("connect");
   sprintf_fifo_thread(cli->print_buff,"%s:.. connecte\n", CMD);
-
+*/
 
 while(run)
 {
@@ -311,7 +250,7 @@ void* thread_serv_f(void* arg)
 
 
   char ligne[LIGNE_MAX];
-  int ecoute = create_socket(&serv->print, serv->port_str);
+  int ecoute = create_socket(serv->print_buff, serv->port_str);
 
 
 
@@ -338,8 +277,6 @@ void* thread_serv_f(void* arg)
     if(lgLue > 0)
     {
       lgLue_tot+= lgLue;
-      //char output[LIGNE_MAX + 65];
-     // sprintf_fifo_thread(serv->print_buff,"%s: reception %ld octets : \"%s\"\n", CMD, lgLue, ligne);
        usleep(10000);
       if(ligne[lgLue-1] == '\0')
       {
@@ -348,11 +285,6 @@ void* thread_serv_f(void* arg)
       }
       
       
-      //sprintf_fifo_thread(serv->log_buff,"%d_<%s>:%s", ret_sprint, serv->pseudo_distant, ligne);
-      //sprintf_fifo_thread(serv->print_buff,"<%s>:%s", serv->pseudo_distant, ligne);
-      //sprintf_fifo_thread(serv->log_buff,"<%s>:%s", serv->pseudo_distant, ligne);
-      //sprintf_fifo_thread(serv->print_buff,"%s",output);
-      //sprintf_fifo_thread(serv->log_buff,"%s",output);
 
       int res_regex = check_cmd(ligne);
 
@@ -420,22 +352,38 @@ int printf_chat(char* username, const char *__restrict__ __format, ...)
 }
 
 
-int print_line(to_print_struct* __toprint, const char *__restrict__ __format, ...)
+int connect_socket(fifo_thread_t* fifo_print, const char* addr_str, const char* port_str)
 {
-  int done = -1;
-  if(__toprint->flag)
-  {
-    while(__toprint->new_line);
-    va_list args;
-    va_start(args, __format);
-    done = vsprintf(__toprint->line, __format, args);
-    va_end(args);
-    __toprint->new_line = 1;
-  }
-  return done;
+  char CMD[] ="client:socket";
+  signal(SIGPIPE, SIG_IGN);
+  int sock, ret;
+  sprintf_fifo_thread(fifo_print,"%s: creating a socket\n", CMD);
+
+  struct sockaddr_in *adrServ;
+
+  sock = socket (AF_INET, SOCK_STREAM, 0);
+  if (sock < 0)
+    erreur_IO("socket");
+
+  sprintf_fifo_thread(fifo_print,"%s: DNS resolving for %s, port %s\n", CMD, addr_str, port_str);
+  adrServ = resolv(addr_str, port_str);
+  if (adrServ == NULL)
+    erreur("adresse %s port %s inconnus\n", addr_str, port_str);
+
+  sprintf_fifo_thread(fifo_print,"%s: adr %s, port %hu\n", CMD,
+	       stringIP(ntohl(adrServ->sin_addr.s_addr)),
+	       ntohs(adrServ->sin_port));
+
+  sprintf_fifo_thread(fifo_print,"%s: connecting the socket ...\n", CMD);
+  ret = 0;
+  while(connect(sock, (struct sockaddr *)adrServ, sizeof(struct sockaddr_in)) < 0);
+  if (ret < 0)
+    erreur_IO("connect");
+  sprintf_fifo_thread(fifo_print,"%s:.. connecte\n", CMD);
+  return sock;
 }
 
-int create_socket(to_print_struct* print, char *port_str)
+int create_socket(fifo_thread_t* fifo_print, const char *port_str)
 {
   char CMD[] ="serveur:socket";
 
@@ -443,7 +391,7 @@ int create_socket(to_print_struct* print, char *port_str)
   struct sockaddr_in adrEcoute;
   short listen_port = (short)atoi(port_str);
 
-  print_line(print,"%s: creating a socket\n", CMD);
+  sprintf_fifo_thread(fifo_print,"%s: creating a socket\n", CMD);
   ecoute = socket (AF_INET, SOCK_STREAM, 0);
   if (ecoute < 0)
     erreur_IO("socket");
@@ -451,17 +399,17 @@ int create_socket(to_print_struct* print, char *port_str)
   adrEcoute.sin_family = AF_INET;
   adrEcoute.sin_addr.s_addr = INADDR_ANY;
   adrEcoute.sin_port = htons(listen_port);
-  print_line(print,"%s: binding to INADDR_ANY address on port %d\n", CMD, listen_port);
+  sprintf_fifo_thread(fifo_print,"%s: binding to INADDR_ANY address on port %d\n", CMD, listen_port);
   ret = bind (ecoute,  (struct sockaddr *)&adrEcoute, sizeof(adrEcoute));
   if (ret < 0)
     erreur_IO("bind");
   
-  print_line(print,"%s: listening to socket\n", CMD);
+  sprintf_fifo_thread(fifo_print,"%s: listening to socket\n", CMD);
   ret = listen (ecoute, 5);
   if (ret < 0)
     erreur_IO("listen");
   
-  print_line(print,"%s: accepting a connection\n", CMD);
+  sprintf_fifo_thread(fifo_print,"%s: accepting a connection\n", CMD);
   
   return ecoute;
 }
