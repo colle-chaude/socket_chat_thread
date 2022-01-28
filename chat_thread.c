@@ -20,7 +20,7 @@ typedef struct
   fifo_thread_t* log_buff;
   char addr_str[30];
   char port_str[8];
-
+  int sock;
 
   struct sockaddr_in *adrServ;
 
@@ -34,6 +34,8 @@ typedef struct
   char port_str[8];
   char pseudo_distant[30];
 
+  int sock;
+
 }serv_struct;
 
 
@@ -42,6 +44,9 @@ void* thread_cli_f(void* arg);
 void* thread_serv_f(void* arg);
 int check_cmd(char* line);
 int printf_chat(char* username, const char *__restrict__ __format, ...);
+
+void mk_cli( cli_struct* cli);
+void mk_serv(serv_struct* serv);
 
 int connect_socket(fifo_thread_t* fifo_print, const char* addr_str, const char* port_str);
 int create_socket(fifo_thread_t* fifo_print, const char *port_str);
@@ -56,7 +61,8 @@ int create_socket(fifo_thread_t* fifo_print, const char *port_str);
 
 
 int main(int argc, char *argv[]) {
-
+  int nocli = 0;
+  int noserv = 0;
   int run = 1; 
   char line_to_print[PRINT_LINE_MAX];
   pthread_t pthread_cli, pthread_serv;
@@ -64,16 +70,20 @@ int main(int argc, char *argv[]) {
 
   fifo_thread_t fifo_log;
   fifo_thread_t fifo_print;
+  
   init_fifo_thread(&fifo_log, NB_LINE_PRINT, PRINT_LINE_MAX);
   init_fifo_thread(&fifo_print, NB_LINE_PRINT, PRINT_LINE_MAX);
 
   serv_struct serveur_s = {&fifo_print, &fifo_log, "2000", "distant"};
   cli_struct client_s = {&fifo_print, &fifo_log, "localhost", "2000"};
 
+  client_s.sock = -1;
+  serveur_s.sock = -1;
+
   regex_t  arg_ex;
   regmatch_t arg_match[2];
   regcomp(&arg_ex, "^-(\\w)$", REG_EXTENDED|REG_NOSUB);//regex qui cherche les -x (x lettre associée au paramètre)
-  for(int i = 1; i<argc; i++)
+  for(int i = 1; i<argc; i++) // ----------  parsing des arguments -------
   {
     if( regexec(&arg_ex, argv[i], 1, arg_match, 0) == 0)
     {
@@ -97,6 +107,12 @@ int main(int argc, char *argv[]) {
         break;
       case 'i':
         if(i < argc-1)strcpy(serveur_s.pseudo_distant, argv[i+1]);
+        break;
+      case 'c':
+        nocli = 1;
+        break;
+      case 's':
+        noserv = 1;
         break;
       case 'h':
         printf("%s\n\t%s\n\t%s\n\t%s\n\t%s\n\t%s\n\t%s","Help : ",
@@ -134,8 +150,8 @@ if(run)
 
 
   printf("creating thread\n");
-  pthread_create(&pthread_cli, NULL, &thread_cli_f, &client_s);
-  pthread_create(&pthread_serv, NULL, &thread_serv_f, &serveur_s);
+  if(!nocli)pthread_create(&pthread_cli, NULL, &thread_cli_f, &client_s);
+  if(!noserv)pthread_create(&pthread_serv, NULL, &thread_serv_f, &serveur_s);
   printf("thread created\n");
   while(run)
   { 
@@ -154,9 +170,25 @@ if(run)
 
 }
 
+
+void* thread_mk_cli(void *arg)
+{
+}
+
+void* thread_mk_serv(void *arg)
+{
+}
+
+
+
+
+
 void* thread_cli_f(void* arg)
 {
+
   cli_struct* cli = (cli_struct*) arg;
+
+
   char CMD[] ="client";
   sprintf_fifo_thread(cli->print_buff,"%s: thread cli start\n", CMD);
   
@@ -165,8 +197,15 @@ void* thread_cli_f(void* arg)
 
   char ligne[LIGNE_MAX];
   int lgEcr;
-
-  int sock = connect_socket(cli->print_buff, cli->addr_str, cli->port_str);
+  if(cli->sock == -1)
+  {
+   mk_cli(arg);
+  }
+  else
+  {
+    sprintf_fifo_thread(cli->print_buff,"%s: thread cli started by serveur\n", CMD);
+  }
+ // int sock = connect_socket(cli->print_buff, cli->addr_str, cli->port_str);
 
 while(run)
 {
@@ -176,7 +215,7 @@ while(run)
   }
   else
   {
-    lgEcr = ecrireLigne(sock, ligne); // send the message
+    lgEcr = ecrireLigne(cli->sock, ligne); // send the message
     sprintf_fifo_thread(cli->log_buff,"<%s>:%s", pseudo_local, ligne); // log the message
     sprintf_fifo_thread(cli->print_buff,"");// renew username at the begining of the line
 
@@ -202,7 +241,7 @@ while(run)
 
 }
 
-  if (close(sock) == -1)
+  if (close(cli->sock) == -1)
     erreur_IO("close");
   
   
@@ -222,25 +261,18 @@ void* thread_serv_f(void* arg)
 
 
   char ligne[LIGNE_MAX];
-  int ecoute = create_socket(serv->print_buff, serv->port_str);
 
+  int canal = serv->sock;
+  int ecoute = -1;
 
-
-
-
-  struct sockaddr_in adrClient;
-  unsigned int lgAdrClient;
-  int canal; 
-  lgAdrClient = sizeof(adrClient);
-  canal = accept(ecoute, (struct sockaddr *)&adrClient, &lgAdrClient);
-  if (canal < 0)
-    erreur_IO("accept");
-
-  
-  
-  sprintf_fifo_thread(serv->print_buff,"%s: adr %s, listen_port %hu\n", CMD,
-         stringIP(ntohl(adrClient.sin_addr.s_addr)),
-         ntohs(adrClient.sin_port));
+  if(canal == -1)
+  {
+    mk_serv(arg);
+  }
+  else
+  {
+    sprintf_fifo_thread(serv->print_buff,"%s: thread serv started by client\n", CMD);
+  }
 
   while (run)
   {
@@ -249,14 +281,14 @@ void* thread_serv_f(void* arg)
     if(lgLue > 0)
     {
       lgLue_tot+= lgLue;
-       usleep(10000);
       if(ligne[lgLue-1] == '\0')
       {
         ligne[lgLue-1] = '\n';
         ligne[lgLue] = '\0';
       }
       
-      
+      sprintf_fifo_thread(serv->print_buff,"<%s>:%s", serv->pseudo_distant, ligne);
+      sprintf_fifo_thread(serv->log_buff,"<%s>:%s", serv->pseudo_distant, ligne);
 
       int res_regex = check_cmd(ligne);
 
@@ -269,8 +301,6 @@ void* thread_serv_f(void* arg)
       {
         sprintf_fifo_thread(serv->print_buff,"\nclean\n");
       }
-      sprintf_fifo_thread(serv->print_buff,"<%s>:%s", serv->pseudo_distant, ligne);
-      sprintf_fifo_thread(serv->log_buff,"<%s>:%s", serv->pseudo_distant, ligne);
 
     }
   }
@@ -279,8 +309,9 @@ void* thread_serv_f(void* arg)
   if (close(canal) == -1)
     erreur_IO("close canal");
 
-  if (close(ecoute) == -1)
-    erreur_IO("close ecoute");
+  if(ecoute != -1)
+    if (close(ecoute) == -1)
+      erreur_IO("close ecoute");
 
   //////////////////
   
@@ -313,6 +344,7 @@ int check_cmd(char* line)
 int printf_chat(char* username, const char *__restrict__ __format, ...)
 {
     int done;
+    //fflush(stdin);
     printf("\r");
     va_list args;
     va_start(args, __format);
@@ -386,3 +418,42 @@ int create_socket(fifo_thread_t* fifo_print, const char *port_str)
   return ecoute;
 }
 
+void mk_cli( cli_struct* cli)
+{
+  //cli_struct* cli = (cli_struct*) arg;
+
+  pthread_t pthread_serv;
+  serv_struct serveur_s = {cli->print_buff, cli->log_buff, "2000", "distant"};
+
+  cli->sock = connect_socket(cli->print_buff, cli->addr_str, cli->port_str);
+
+
+  serveur_s.sock = cli->sock;
+  pthread_create(&pthread_serv, NULL, &thread_serv_f, &serveur_s);
+
+}
+
+void mk_serv(serv_struct* serv)
+{
+  //serv_struct* serv = (serv_struct*) arg;
+
+  pthread_t pthread_cli;
+  cli_struct client_s = {serv->print_buff, serv->log_buff, "localhost", "2000"};
+
+  int ecoute = create_socket(serv->print_buff, serv->port_str);
+
+
+  struct sockaddr_in adrClient;
+  unsigned int lgAdrClient;
+  lgAdrClient = sizeof(adrClient);
+  serv->sock = accept(ecoute, (struct sockaddr *)&adrClient, &lgAdrClient);
+  if (serv->sock < 0)
+    erreur_IO("accept");
+
+  sprintf_fifo_thread(serv->print_buff,"client: connected to : adr %s, listen_port %hu\n",
+        stringIP(ntohl(adrClient.sin_addr.s_addr)),
+        ntohs(adrClient.sin_port));
+
+  client_s.sock = serv->sock;
+  pthread_create(&pthread_cli, NULL, &thread_cli_f, &client_s);
+}
