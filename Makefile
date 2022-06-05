@@ -1,6 +1,7 @@
 # TP3 : Fichier Makefile
 #
-include ../Makefile.inc
+ROOT= .
+include $(ROOT)/Makefile.inc
 
 EXE = chat_thread
 

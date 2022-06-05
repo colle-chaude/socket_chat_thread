@@ -1,9 +1,10 @@
 # lib : Fichier Makefile
 #
 ROOT= ../..
-include ../../Makefile.inc
 
-LIBRARY=	../lib/libmelc.a
+include $(ROOT)/Makefile.inc
+
+LIBRARY=	$(PSE_LIB)/libpse.a
 MODULES_SRC=	$(wildcard *.c)
 MODULES_OBJ=	$(patsubst %.c,%.o,$(MODULES_SRC))
 
