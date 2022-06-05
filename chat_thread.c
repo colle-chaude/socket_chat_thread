@@ -22,7 +22,6 @@ typedef struct
   char dist_addr_str[30];
   char dist_port_str[8];
   char local_port_str[8];
-  char pseudo_distant[30];
   char pseudo_local[30];
 
   pthread_t pthread_rcv, pthread_send;
@@ -85,7 +84,7 @@ int main(int argc, char *argv[]) {
   init_fifo_thread_sub(&fifo_input, NB_LINE_PRINT, PRINT_LINE_MAX, 5); // initialisation de la fifo de input
 
   pthread_t mk_cli_thread_handler, mk_serv_thread_handler;
-  com_struct_t com_s = {&fifo_print, &fifo_input, &fifo_log, "localhost", "2000", "2000", "distant", "local--", NULL, NULL, -1, 1}; // initialisation structure du client
+  com_struct_t com_s = {&fifo_print, &fifo_input, &fifo_log, "localhost", "2000", "2000", "local--", NULL, NULL, -1, 1}; // initialisation structure du client
   term_var_struct_t term_var_s = {&fifo_print, &fifo_input}; // initialisation structure du terminal
 
   regex_t  arg_ex;
@@ -108,13 +107,10 @@ int main(int argc, char *argv[]) {
         if(i < argc-1)strcpy(com_s.local_port_str, argv[i+1]);
         break;
       case 'u':
-        if(i < argc-1)strcpy(com_s.pseudo_local, argv[i+1]);
+        if(i < argc-1)strcpy(pseudo_local, argv[i+1]);
         break;
       case 'o':
         if(i < argc-1)strcpy(log_file_str, argv[i+1]);
-        break;
-      case 'i':
-        if(i < argc-1)strcpy(com_s.pseudo_distant, argv[i+1]);
         break;
       case 'c':
         nocli = 1;
@@ -128,8 +124,7 @@ int main(int argc, char *argv[]) {
         "-p : port de l'interlocuteur",
         "-l : port d'ecoute local",
         "-u : mon username",
-        "-o : fichier de log",
-        "-i : username de l'interlocuteur");
+        "-o : fichier de log");
         run = 0;
         break;
       
@@ -181,7 +176,7 @@ if(run)
 
 }
 
-
+// make a client, connect to the server and start thread to send and recieve messages
 void* thread_mk_cli(void *arg)
 {
   com_struct_t* com = (com_struct_t*) arg; 
@@ -223,6 +218,7 @@ void* thread_mk_cli(void *arg)
   //run = 0;
 }
 
+// make a server, listen to the client and start thread to send and recieve messages
 void* thread_mk_serv(void *arg)
 {
   com_struct_t* com = (com_struct_t*) arg;
@@ -312,7 +308,7 @@ void* thread_add_fifo_input_f(void *arg)
       if(car_id == PRINT_LINE_MAX-1 || line_to_input[car_id-1] == '\n')
       {
         line_to_input[car_id] = '\0';
-        add_fifo_thread_sub(term_var->input_buff, line_to_input);
+        sprintf_fifo_thread_sub(term_var->input_buff,"<%s>:%s", pseudo_local, line_to_input);
         sprintf_fifo_thread(term_var->print_buff,"");// renew username at the begining of the line
         car_id = 0;
       }
@@ -372,7 +368,8 @@ while( com->running && (input_buff_sub != -1) )
   else
   {
     lgEcr = ecrireLigne(com->sock, ligne); // send the message
-    sprintf_fifo_thread(com->log_buff,"<%s>:%s", pseudo_local, ligne); // log the message
+    sprintf_fifo_thread(com->log_buff, ligne);
+    //sprintf_fifo_thread(com->log_buff,"<%s>:%s", pseudo_local, ligne); // log the message
 
     if (lgEcr == -1)
       erreur_IO("ecrireLigne");
@@ -433,8 +430,10 @@ void* thread_rcv_f(void* arg)
         ligne[lgLue] = '\0';
       }
       
-      sprintf_fifo_thread(com->print_buff,"<%s>:%s", com->pseudo_distant, ligne);
-      sprintf_fifo_thread(com->log_buff,"<%s>:%s", com->pseudo_distant, ligne);
+      //sprintf_fifo_thread(com->print_buff,"<%s>:%s", com->pseudo_distant, ligne);
+      //sprintf_fifo_thread(com->log_buff,"<%s>:%s", com->pseudo_distant, ligne);
+      sprintf_fifo_thread(com->print_buff, ligne);
+      sprintf_fifo_thread(com->log_buff, ligne);
 
       int res_regex = check_cmd(ligne);
 
