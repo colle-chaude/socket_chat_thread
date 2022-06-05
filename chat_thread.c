@@ -30,6 +30,8 @@ typedef struct
 }com_struct;
 
 
+void* thread_pop_fifo_print_f(void *arg);
+void* thread_pop_fifo_log_f(void *arg);
 
 void* thread_send_f(void* arg);
 void* thread_rcv_f(void* arg);
@@ -43,23 +45,26 @@ int connect_socket(fifo_thread_t* fifo_print, const char* addr_str, const char* 
 int create_socket(fifo_thread_t* fifo_print, const char *port_str);
 
 
-  int nb_print = 0;
-  int nb_log = 0;
+int nb_print = 0;
+int nb_log = 0;
 
-  char pseudo_local[30] =   "local--";
-  char log_file_str[60] = "journal.log";
-  int log_file;
+char pseudo_local[30] =   "local--";
+char log_file_str[60] = "journal.log";
+int log_file;
+
+int run = 1; 
 
 
 int main(int argc, char *argv[]) {
   int nocli = 0;
   int noserv = 0;
-  int run = 1; 
+  run = 1; 
   char line_to_print[PRINT_LINE_MAX];
 
 
-  fifo_thread_t fifo_log; // fifo pour l'ecriture dans le journal
+  pthread_t pthread_fifo_print, pthread_fifo_log;
   fifo_thread_t fifo_print; // fifo pour l'ecriture sur le terminal
+  fifo_thread_t fifo_log; // fifo pour l'ecriture dans le journal
   
   init_fifo_thread(&fifo_log, NB_LINE_PRINT, PRINT_LINE_MAX); // initialisation de la fifo de log
   init_fifo_thread(&fifo_print, NB_LINE_PRINT, PRINT_LINE_MAX); // initialisation de la fifo de print
@@ -126,12 +131,9 @@ if(run)
 
 
 
-  log_file = open(log_file_str,O_CREAT|O_WRONLY|O_APPEND, 0644); // ouverture du fichier de log
-  if (log_file == -1) {
-    char errmessage[90];
-    sprintf(errmessage, "open output, unable to open \"%s\"", log_file_str);
-    erreur_IO(errmessage);
-  }
+  pthread_create(&pthread_fifo_print, NULL, &thread_pop_fifo_print_f, &fifo_print);
+  pthread_create(&pthread_fifo_log, NULL, &thread_pop_fifo_log_f, &fifo_log);
+
 
 
   //  creation des threads client et serveur
@@ -151,20 +153,11 @@ if(run)
 
   while(run)
   { 
-    // vide la fifo de print
-    if(pop_fifo_thread(&fifo_print, line_to_print))
-      printf_chat(pseudo_local, line_to_print);
-    
-    // vide la fifo de log
-    if(pop_fifo_thread(&fifo_log, line_to_print))
-      write(log_file, line_to_print, strlen(line_to_print));
-
+    usleep(100);
   }
 
 }
-  if (close(log_file) == -1) {
-    erreur_IO("close output");
-  }
+
 
 }
 
@@ -177,8 +170,41 @@ void* thread_mk_serv(void *arg)
 {
 }
 
+void* thread_pop_fifo_print_f(void *arg)
+{
+  fifo_thread_t* fifo_print = (fifo_thread_t*)arg;
+  char line_to_print[PRINT_LINE_MAX];
+  while(run)
+  {
+    if(pop_fifo_thread(fifo_print, line_to_print))
+      printf_chat(pseudo_local, line_to_print);
+  }
+}
 
+void* thread_pop_fifo_log_f(void *arg)
+{
+  fifo_thread_t* fifo_log = (fifo_thread_t*)arg;
+  char line_to_log[PRINT_LINE_MAX];
+  log_file = open(log_file_str,O_CREAT|O_WRONLY|O_APPEND, 0644); // ouverture du fichier de log
 
+  if (log_file == -1) {
+    char errmessage[90];
+    sprintf(errmessage, "open output, unable to open \"%s\"", log_file_str);
+    erreur_IO(errmessage);
+  }
+  else
+  {
+    while(run)
+    {
+      if(pop_fifo_thread(fifo_log, line_to_log))
+        write(log_file, line_to_log, strlen(line_to_log));
+    }
+  }
+
+  if (close(log_file) == -1) {
+    erreur_IO("close output");
+  }
+}
 
  // thread envoie des messages
 void* thread_send_f(void* arg)
@@ -190,7 +216,6 @@ void* thread_send_f(void* arg)
 
 
   ssize_t nbRead, nbRead_tot = 0;
-  int run = 1;
 
   char ligne[LIGNE_MAX];
   int lgEcr;
@@ -264,7 +289,6 @@ void* thread_rcv_f(void* arg)
   sprintf_fifo_thread(com->print_buff,"%s: thread serv start\n", CMD);
   
   ssize_t lgLue, lgLue_tot = 0;
-  int run = 1;
 
 
   char ligne[LIGNE_MAX];

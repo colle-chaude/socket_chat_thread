@@ -30,6 +30,7 @@ int destroy_fifo_thread(fifo_thread_t* __fifo);                                 
 
 int add_fifo_thread(fifo_thread_t* __fifo, const char* __line);                                  // add a new line in the fifo, blocking while fifo is full  
 int sprintf_fifo_thread(fifo_thread_t* __fifo, const char *__restrict__ __format, ...);          // same as add_fifo_thread, but handle string paramters as %d, %s ..
-int pop_fifo_thread(fifo_thread_t* __fifo, char* __line);                                        // get out the oldezst line of the fifo and return 1 or retrun 0 if empty 
+int pop_fifo_thread(fifo_thread_t* __fifo, char* __line);                                        // get out the oldest line of the fifo and return 1 or retrun 0 if empty 
+int try_pop_fifo_thread(fifo_thread_t* __fifo, char* __line);                                        // get out the oldest line of the fifo and return 1 or retrun 0 if empty 
 
 #endif // FIFO_THREAD_LIB_H
