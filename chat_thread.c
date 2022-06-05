@@ -13,32 +13,7 @@
 #define BUF_SIZE 1024
 #define PRINT_LINE_MAX LIGNE_MAX + 70
 #define NB_LINE_PRINT 20
-/*
-typedef struct
-{
-  fifo_thread_t* print_buff;
-  fifo_thread_t* log_buff;
-  char addr_str[30];
-  char port_str[8];
-  int sock;
 
-  struct sockaddr_in *adrServ;
-
-  //cli_struct* next;  // TODO chainer les instances
-}cli_struct;
-
-typedef struct 
-{
-  fifo_thread_t* print_buff;
-  fifo_thread_t* log_buff;
-  char port_str[8];
-  char pseudo_distant[30];
-
-  int sock;
-
-}serv_struct;
-
-*/
 typedef struct 
 {
   fifo_thread_t* print_buff;
@@ -81,7 +56,6 @@ int main(int argc, char *argv[]) {
   int noserv = 0;
   int run = 1; 
   char line_to_print[PRINT_LINE_MAX];
-  //pthread_t pthread_cli, pthread_serv;
 
 
   fifo_thread_t fifo_log; // fifo pour l'ecriture dans le journal
@@ -90,14 +64,8 @@ int main(int argc, char *argv[]) {
   init_fifo_thread(&fifo_log, NB_LINE_PRINT, PRINT_LINE_MAX); // initialisation de la fifo de log
   init_fifo_thread(&fifo_print, NB_LINE_PRINT, PRINT_LINE_MAX); // initialisation de la fifo de print
 
-  //serv_struct serveur_s = {&fifo_print, &fifo_log, "2000", "distant"}; // initialisation strucuture du serveur
-  //cli_struct client_s = {&fifo_print, &fifo_log, "localhost", "2000"}; //  initialisation structure du client
-
   com_struct com_s = {&fifo_print, &fifo_log, "localhost", "2000", "2000", "distant", "local--", NULL, NULL, -1}; // initialisation structure du client
 
-  //client_s.sock = -1;
-  //serveur_s.sock = -1;
-  com_s.sock = -1;
 
   regex_t  arg_ex;
   regmatch_t arg_match[2];
@@ -142,7 +110,6 @@ int main(int argc, char *argv[]) {
         "-o : fichier de log",
         "-i : username de l'interlocuteur");
         run = 0;
-        /* code */
         break;
       
       default:
@@ -216,10 +183,8 @@ void* thread_mk_serv(void *arg)
  // thread envoie des messages
 void* thread_send_f(void* arg)
 {
-  //cli_struct* cli = (cli_struct*) arg; // cast de la structure
   com_struct* com = (com_struct*) arg; // cast de la structure
-  //serv_struct serv = {cli->print_buff, cli->log_buff, "2000", "distant"};
-  //pthread_t pthread_serv;
+  
   char CMD[] ="client";
   sprintf_fifo_thread(com->print_buff,"%s: thread cli start\n", CMD); //print "thread cli dans start"
 
@@ -232,9 +197,7 @@ void* thread_send_f(void* arg)
   if(com->sock == -1)
   {
     create_client(arg);
-    //serv.print_buff = cli->print_buff;
-    //serv.log_buff = cli->log_buff;
-    //serv.sock = cli->sock;
+    
     if(com->pthread_rcv == NULL) 
     {
       pthread_create(&com->pthread_rcv, NULL, &thread_rcv_f, com);
@@ -293,10 +256,9 @@ while(run)
 // thread reception des messages
 void* thread_rcv_f(void* arg)
 {
-  ///serv_struct* serv = (serv_struct*) arg;
+  
   com_struct* com = (com_struct*) arg;
-  //cli_struct cli = {serv->print_buff, serv->log_buff, "localhost", "2000"};
-  //pthread_t pthread_cli;
+  
 
   char CMD[] ="serveur";
   sprintf_fifo_thread(com->print_buff,"%s: thread serv start\n", CMD);
@@ -313,7 +275,6 @@ void* thread_rcv_f(void* arg)
   {
     create_serveur(arg);
 
-    //cli.sock = serv->sock;
     if(com->pthread_send == NULL)
     {
       pthread_create(&com->pthread_send, NULL, &thread_send_f, com);
