@@ -14,21 +14,45 @@
 #define PRINT_LINE_MAX LIGNE_MAX + 70
 #define NB_LINE_PRINT 20
 
+
 typedef struct
+{
+  fifo_thread_t* print_buff;
+  fifo_thread_sub_t* input_buff;
+  fifo_thread_t* log_buff;
+
+  int sock;
+  int running;
+  pthread_t pthread_rcv, pthread_send;
+
+}com_struct_t;
+
+typedef struct
+{
+  fifo_thread_t* print_buff;
+  fifo_thread_sub_t* input_buff;
+  fifo_thread_t* log_buff;
+
+  char listen_port_str[8];
+  int sock;
+  int running;
+
+  int nb_cli;
+  int nb_cli_max;
+  com_struct_t* connected_com;
+}server_struct_t;
+
+typedef struct 
 {
   fifo_thread_t* print_buff;
   fifo_thread_sub_t* input_buff;
   fifo_thread_t* log_buff;
   char dist_addr_str[30];
   char dist_port_str[8];
-  char local_port_str[8];
-  char pseudo_local[30];
 
-  pthread_t pthread_rcv, pthread_send;
-  int sock;
-  int running;
+  com_struct_t connected_com;
+}client_struct_t;
 
-}com_struct_t;
 
 typedef struct
 {
@@ -46,31 +70,27 @@ void* thread_pop_fifo_log_f(void *arg);
 
 void* thread_send_f(void* arg);
 void* thread_rcv_f(void* arg);
+
+
 int check_cmd(char* line);
 int printf_chat(char* username, const char *__restrict__ __format, ...);
 
-void create_client(com_struct_t* cli);
-int create_serveur(com_struct_t* serv);
 
 int connect_socket(fifo_thread_t* fifo_print, const char* addr_str, const char* port_str);
-int create_socket(fifo_thread_t* fifo_print, const char *port_str);
+int create_socket(fifo_thread_t* fifo_print, const char *port_str, const int nb_max_client);
 
 
-int nb_print = 0;
-int nb_log = 0;
-
-char pseudo_local[30] =   "local--";
+char username[30] =   "local--";
 char log_file_str[60] = "journal.log";
 int log_file;
 
 int run = 1; 
-
+int absolute_end = 0;
 
 int main(int argc, char *argv[]) {
-  int nocli = 0;
-  int noserv = 0;
+  int is_client = 0;
+  int is_server = 0;
   run = 1; 
-  char line_to_print[PRINT_LINE_MAX];
 
 
   pthread_t pthread_fifo_print, pthread_fifo_input, pthread_fifo_log;
@@ -84,7 +104,11 @@ int main(int argc, char *argv[]) {
   init_fifo_thread_sub(&fifo_input, NB_LINE_PRINT, PRINT_LINE_MAX, 5); // initialisation de la fifo de input
 
   pthread_t mk_cli_thread_handler, mk_serv_thread_handler;
-  com_struct_t com_s = {&fifo_print, &fifo_input, &fifo_log, "localhost", "2000", "2000", "local--", NULL, NULL, -1, 1}; // initialisation structure du client
+  server_struct_t server_s = {&fifo_print, &fifo_input, &fifo_log, "2000", -1, 1, 0, 10};
+  client_struct_t client_s = {&fifo_print, &fifo_input, &fifo_log, "localhost", "2000", {&fifo_print, &fifo_input, &fifo_log, -1, 1}};
+
+
+  //com_struct_t com_s = {&fifo_print, &fifo_input, &fifo_log, -1, 1}; // initialisation structure du client
   term_var_struct_t term_var_s = {&fifo_print, &fifo_input}; // initialisation structure du terminal
 
   regex_t  arg_ex;
@@ -98,33 +122,35 @@ int main(int argc, char *argv[]) {
       switch (argv[i][1])
       {
       case 'a':
-        if(i < argc-1)strcpy(com_s.dist_addr_str, argv[i+1]);
+        if(i < argc-1)strcpy(client_s.dist_addr_str, argv[i+1]);
         break;
       case 'p':
-        if(i < argc-1)strcpy(com_s.dist_port_str, argv[i+1]);
+        if(i < argc-1)strcpy(client_s.dist_port_str, argv[i+1]);
         break;
       case 'l':
-        if(i < argc-1)strcpy(com_s.local_port_str, argv[i+1]);
+        if(i < argc-1)strcpy(server_s.listen_port_str, argv[i+1]);
         break;
       case 'u':
-        if(i < argc-1)strcpy(pseudo_local, argv[i+1]);
+        if(i < argc-1)strcpy(username, argv[i+1]);
         break;
       case 'o':
         if(i < argc-1)strcpy(log_file_str, argv[i+1]);
         break;
       case 'c':
-        nocli = 1;
+        is_client = 1;
         break;
       case 's':
-        noserv = 1;
+        is_server = 1;
         break;
       case 'h':
-        printf("%s\n\t%s\n\t%s\n\t%s\n\t%s\n\t%s\n\t%s","Help : ",
-        "-a : addresse de l'interlocuteur",
-        "-p : port de l'interlocuteur",
-        "-l : port d'ecoute local",
-        "-u : mon username",
-        "-o : fichier de log");
+        printf("%s\n\t%s\n\t%s\n\t%s\n\t%s\n\t%s\n\t%s\n\t%s\n","Help : ",
+          "-a : addresse de l'interlocuteur",
+          "-p : port de l'interlocuteur",
+          "-l : port d'ecoute local",
+          "-u : mon username",
+          "-o : fichier de log",
+          "-s : mode serveur",
+          "-c : mode client");
         run = 0;
         break;
       
@@ -133,77 +159,83 @@ int main(int argc, char *argv[]) {
       }
     }
 
-
   }
 
 
-if(run)
-{
-
-
-  // trhead for with the terminal and log file
-  pthread_create(&pthread_fifo_print, NULL, &thread_pop_fifo_print_f, &fifo_print);
-  pthread_create(&pthread_fifo_input, NULL, &thread_add_fifo_input_f, &term_var_s);
-  pthread_create(&pthread_fifo_log, NULL, &thread_pop_fifo_log_f, &fifo_log);
-
-
-
-  //  create client or/and server
-  printf("creating thread\n");
-  if(!nocli)
+  if(run)
   {
-    printf("creating client\n");
-    //pthread_create(&com_s.pthread_send, NULL, &thread_send_f, &com_s);
-    pthread_create(&mk_cli_thread_handler, NULL, &thread_mk_cli, &com_s);
+
+    // ----------  creating threads  -------
+
+    pthread_create(&pthread_fifo_print, NULL, &thread_pop_fifo_print_f, &fifo_print);
+    pthread_create(&pthread_fifo_input, NULL, &thread_add_fifo_input_f, &term_var_s);
+    pthread_create(&pthread_fifo_log, NULL, &thread_pop_fifo_log_f, &fifo_log);
+
+    //  create client or/and server
+    printf("creating thread\n");
+    if(is_client)
+    {
+      printf("creating client\n");
+      pthread_create(&mk_cli_thread_handler, NULL, &thread_mk_cli, &client_s);
+      
+    }
+    if(is_server)
+    {
+      printf("creating server\n");
+      pthread_create(&mk_serv_thread_handler, NULL, &thread_mk_serv, &server_s);
+    }
+    printf("thread created\n");
+
+    if(is_client) pthread_join(mk_cli_thread_handler, NULL);
+    if(is_server) pthread_join(mk_serv_thread_handler, NULL);
     
+
+    run = 0;
+    printf("Closing program\n");
+    printf("Closing fifo_print\n");
+    pthread_join(pthread_fifo_print, NULL);
+    printf("Closing fifo_input\n");
+    pthread_join(pthread_fifo_input, NULL);
+    printf("Closing fifo_log\n");
+    pthread_join(pthread_fifo_log, NULL);
+    printf("thread closed\n\n");
+    return EXIT_SUCCESS;
   }
-  if(!noserv)
-  {
-    printf("creating serveur\n");
-    //pthread_create(&com_s.pthread_rcv, NULL, &thread_rcv_f, &com_s);
-    pthread_create(&mk_serv_thread_handler, NULL, &thread_mk_serv, &com_s);
-  }
-  printf("thread created\n");
-
-
-  while(run)
-  { 
-    usleep(100);
-  }
-
-}
-
 
 }
 
 // make a client, connect to the server and start thread to send and recieve messages
 void* thread_mk_cli(void *arg)
 {
-  com_struct_t* com = (com_struct_t*) arg; 
+  client_struct_t* cli_s = (client_struct_t*) arg; 
   
   char CMD[] ="mk_cli";
-  sprintf_fifo_thread(com->print_buff,"%s: thread mk cli start\n", CMD); 
+  sprintf_fifo_thread(cli_s->print_buff,"%s: thread mk cli start\n", CMD); 
   
-
-
+  com_struct_t* com = &cli_s->connected_com;
 
   if(com->sock == -1)
   {
-    create_client(com);
+    com->sock = connect_socket(cli_s->print_buff, cli_s->dist_addr_str, cli_s->dist_port_str);
+
+    sprintf_fifo_thread(cli_s->print_buff,"client maker: connected to : adr %s, port %s\n",
+          cli_s->dist_addr_str,
+          cli_s->dist_port_str);
+
     if(com->pthread_rcv == NULL) 
     {
-      sprintf_fifo_thread(com->print_buff,"%s: create rcv thread\n", CMD);
+      sprintf_fifo_thread(cli_s->print_buff,"%s: create rcv thread\n", CMD);
       pthread_create(&com->pthread_rcv, NULL, &thread_rcv_f, com); 
     }
     if(com->pthread_send == NULL) 
     {
-      sprintf_fifo_thread(com->print_buff,"%s: create send tread\n", CMD);
+      sprintf_fifo_thread(cli_s->print_buff,"%s: create send tread\n", CMD);
       pthread_create(&com->pthread_send, NULL, &thread_send_f, com);
     }
   }
   else
   {
-    sprintf_fifo_thread(com->print_buff,"%s: thread cli started by serveur, with socket : %d\n", CMD, com->sock);
+    sprintf_fifo_thread(cli_s->print_buff,"%s: thread cli started by server, with socket : %d\n", CMD, com->sock);
   }
 
   while (com->running)
@@ -211,76 +243,108 @@ void* thread_mk_cli(void *arg)
     usleep(100);
   }
   
+  sprintf_fifo_thread(cli_s->print_buff,"%s: thread mk cli ending\n", CMD);
+
+  pthread_join(com->pthread_rcv, NULL);
+  pthread_join(com->pthread_send, NULL);
+
   if (close(com->sock) == -1)
-    erreur_IO("close");
+    erreur_pthread_IO("close");
   
   usleep(100000);
+
+  sprintf_fifo_thread(cli_s->print_buff,"%s: thread mk cli ended\n", CMD);
   //run = 0;
+
+	pthread_exit(EXIT_SUCCESS);
 }
 
 // make a server, listen to the client and start thread to send and recieve messages
 void* thread_mk_serv(void *arg)
 {
-  com_struct_t* com = (com_struct_t*) arg;
-  int nb_cli = 0;
-  int nb_cli_max = 3;
-  com_struct_t cli_tab[nb_cli_max];
+  server_struct_t* serv_s = (server_struct_t*) arg;
+  serv_s->nb_cli = 0;
 
+  serv_s->connected_com = malloc(sizeof(com_struct_t) * serv_s->nb_cli_max);
 
   char CMD[] ="mk_serv";
-  sprintf_fifo_thread(com->print_buff,"%s: thread mk serv start\n", CMD);
+  sprintf_fifo_thread(serv_s->print_buff,"%s: thread mk serv start\n", CMD);
   
-  int ecoute = create_socket(com->print_buff, com->local_port_str);
+  serv_s->sock = create_socket(serv_s->print_buff, serv_s->listen_port_str, serv_s->nb_cli_max);
+  fcntl(serv_s->sock, F_SETFL, O_NONBLOCK);
 
 
-
-  
-  while (com->running)
+  while (serv_s->running && !absolute_end)
   {
-    if(nb_cli < nb_cli_max)
+    if(serv_s->nb_cli < serv_s->nb_cli_max)
     {
-      cli_tab[nb_cli] = *com;
+      com_struct_t* com = &serv_s->connected_com[serv_s->nb_cli];
+      com->print_buff = serv_s->print_buff;
+      com->input_buff = serv_s->input_buff;
+      com->log_buff = serv_s->log_buff;
+      com->running = 1;
+
 
       struct sockaddr_in adrClient;
       unsigned int lgAdrClient;
       lgAdrClient = sizeof(adrClient);
-      cli_tab[nb_cli].sock = accept(ecoute, (struct sockaddr *)&adrClient, &lgAdrClient);
-      if (cli_tab[nb_cli].sock < 0)
-        erreur_IO("accept");
-      // TODO get client adress an port info
-      sprintf_fifo_thread(cli_tab[nb_cli].print_buff,"serveur maker: connected to : adr %s, listen_port %d\n",
-            stringIP(ntohl(adrClient.sin_addr.s_addr)),
-            ntohs(adrClient.sin_port));
 
-
-
-      if(cli_tab[nb_cli].pthread_send == NULL)
+      while (serv_s->running && !absolute_end)
       {
-        sprintf_fifo_thread(cli_tab[nb_cli].print_buff,"%s: create send thread\n", CMD); 
-        pthread_create(&cli_tab[nb_cli].pthread_send, NULL, &thread_send_f, &cli_tab[nb_cli]);
+        com->sock = accept(serv_s->sock, (struct sockaddr *) &adrClient, &lgAdrClient);
+        if (com->sock != -1)
+        {
+          break;
+        }
+        usleep(100);
       }
-      if(cli_tab[nb_cli].pthread_rcv == NULL)
+      //com->sock = accept(serv_s->sock, (struct sockaddr *)&adrClient, &lgAdrClient);
+      
+      if (com->sock >= 0)
       {
-        sprintf_fifo_thread(cli_tab[nb_cli].print_buff,"%s: create rcv tread\n", CMD); 
-        pthread_create(&cli_tab[nb_cli].pthread_rcv, NULL, &thread_rcv_f, &cli_tab[nb_cli]);
-      }
+        // TODO get client adress an port info
+        sprintf_fifo_thread(com->print_buff,"server maker: connected to : adr %s, listen_port %d\n",
+              stringIP(ntohl(adrClient.sin_addr.s_addr)),
+              ntohs(adrClient.sin_port));
 
-      nb_cli ++;
+        if(com->pthread_send == NULL)
+        {
+          sprintf_fifo_thread(com->print_buff,"%s: create send thread\n", CMD); 
+          pthread_create(&com->pthread_send, NULL, &thread_send_f, com);
+        }
+        if(com->pthread_rcv == NULL)
+        {
+          sprintf_fifo_thread(com->print_buff,"%s: create rcv tread\n", CMD); 
+          pthread_create(&com->pthread_rcv, NULL, &thread_rcv_f, com);
+        }
+
+        serv_s->nb_cli ++;
+      }
     }
     else usleep(100);
   }
-  
-  for(int i = 0; i< nb_cli; i++)
-    if (close(cli_tab[i].sock) == -1)
-      erreur_IO("close canal");
+  printf("absolute end\n");
 
-  if(ecoute != -1)
-    if (close(ecoute) == -1)
-      erreur_IO("close ecoute");
-  
+  sprintf_fifo_thread(serv_s->print_buff,"%s: thread mk serv ending\n", CMD);
+  for(int i = 0; i< serv_s->nb_cli; i++)
+  {
+    pthread_join(serv_s->connected_com[i].pthread_send, NULL);
+    pthread_join(serv_s->connected_com[i].pthread_rcv, NULL);
+    if (close(serv_s->connected_com[i].sock) == -1)
+      erreur_pthread_IO("close canal");
+  }
+
+  if(serv_s->sock != -1)
+    if (close(serv_s->sock) == -1)
+      erreur_pthread_IO("close socket");
+
+  free(serv_s->connected_com);
+
+  sprintf_fifo_thread(serv_s->print_buff,"%s: thread mk serv ended\n", CMD);
   usleep(100000);
   //run = 0;
 
+	pthread_exit(EXIT_SUCCESS);
 }
 
 void* thread_pop_fifo_print_f(void *arg)
@@ -289,9 +353,12 @@ void* thread_pop_fifo_print_f(void *arg)
   char line_to_print[PRINT_LINE_MAX];
   while(run)
   {
-    if(pop_fifo_thread(fifo_print, line_to_print))
-      printf_chat(pseudo_local, line_to_print);
+    if(try_pop_fifo_thread(fifo_print, line_to_print))
+      printf_chat(username, line_to_print);
+    else usleep(100);
   }
+
+  pthread_exit(EXIT_SUCCESS);
 }
 
 void* thread_add_fifo_input_f(void *arg)
@@ -299,21 +366,34 @@ void* thread_add_fifo_input_f(void *arg)
   term_var_struct_t* term_var = (term_var_struct_t*)arg;
   char line_to_input[PRINT_LINE_MAX];
   int car_id = 0;
+  
 
   while(run)
   {
+    // TODO add a way to stop the thread, use a non blocking getc
     if(line_to_input[car_id] = getc(stdin))
     {
       car_id++;
       if(car_id == PRINT_LINE_MAX-1 || line_to_input[car_id-1] == '\n')
       {
         line_to_input[car_id] = '\0';
-        sprintf_fifo_thread_sub(term_var->input_buff,"<%s>:%s", pseudo_local, line_to_input);
+        sprintf_fifo_thread_sub(term_var->input_buff,"<%s>:%s", username, line_to_input);
         sprintf_fifo_thread(term_var->print_buff,"");// renew username at the begining of the line
         car_id = 0;
+
+
+        int res = check_cmd(line_to_input);
+        if(res & END_TRANSMIT)
+        {
+          absolute_end = 1;
+          sprintf_fifo_thread_sub(term_var->input_buff,"input manager: absolute end\n");
+        }
       }
     }
+    else usleep(100);
   }
+
+  pthread_exit(EXIT_SUCCESS);
 }
 
 void* thread_pop_fifo_log_f(void *arg)
@@ -325,20 +405,23 @@ void* thread_pop_fifo_log_f(void *arg)
   if (log_file == -1) {
     char errmessage[90];
     sprintf(errmessage, "open output, unable to open \"%s\"", log_file_str);
-    erreur_IO(errmessage);
+    erreur_pthread_IO(errmessage);
   }
   else
   {
     while(run)
     {
-      if(pop_fifo_thread(fifo_log, line_to_log))
+      if(try_pop_fifo_thread(fifo_log, line_to_log))
         write(log_file, line_to_log, strlen(line_to_log));
+      else usleep(100);
     }
   }
 
   if (close(log_file) == -1) {
-    erreur_IO("close output");
+    erreur_pthread_IO("close output");
   }
+  
+  pthread_exit(EXIT_SUCCESS);
 }
 
  // thread send messages
@@ -369,10 +452,10 @@ while( com->running && (input_buff_sub != -1) )
   {
     lgEcr = ecrireLigne(com->sock, ligne); // send the message
     sprintf_fifo_thread(com->log_buff, ligne);
-    //sprintf_fifo_thread(com->log_buff,"<%s>:%s", pseudo_local, ligne); // log the message
+    //sprintf_fifo_thread(com->log_buff,"<%s>:%s", username, ligne); // log the message
 
     if (lgEcr == -1)
-      erreur_IO("ecrireLigne");
+      erreur_pthread_IO("ecrireLigne");
 
     nbRead = strlen(ligne); 
     nbRead_tot += nbRead;
@@ -382,7 +465,7 @@ while( com->running && (input_buff_sub != -1) )
     if(res_regex & END_TRANSMIT)
     {
       com->running = 0;
-      sprintf_fifo_thread(com->print_buff,"%s: End sended, close serveur\n", CMD);
+      sprintf_fifo_thread(com->print_buff,"%s: End sended, close server\n", CMD);
     }
     if(res_regex & CLEAR_TRANSMIT)
     {
@@ -396,9 +479,11 @@ while( com->running && (input_buff_sub != -1) )
   
   
   sprintf_fifo_thread(com->print_buff,"%s: %ld char have been transfered\n",CMD, nbRead_tot);
-  return NULL;
-}
+  
+  
 
+	pthread_exit(EXIT_SUCCESS);
+}
 
 // thread receive messages
 void* thread_rcv_f(void* arg)
@@ -440,7 +525,7 @@ void* thread_rcv_f(void* arg)
       if(res_regex & END_TRANSMIT)
       {
         com->running = 0;
-        sprintf_fifo_thread(com->print_buff,"%s: End recieved, close serveur\n", CMD);
+        sprintf_fifo_thread(com->print_buff,"%s: End recieved, close server\n", CMD);
       }
       if(res_regex & CLEAR_TRANSMIT)
       {
@@ -454,17 +539,22 @@ void* thread_rcv_f(void* arg)
   //////////////////
   
   sprintf_fifo_thread(com->print_buff,"%s: %ld char have been transfered\n",CMD, lgLue_tot);
-  return NULL;
+  
+  
+	pthread_exit(EXIT_SUCCESS);
 }
 
 //c ckeck if the command is a valid command
 int check_cmd(char* line)
 {
   int ret = 0;
-  char fin_ex_str[] = "^fin\n?$";
-  char init_ex_str[] = "^init\n?$";
+  char abs_fin_ex_str[] = "^fin\n?$";
+  char fin_ex_str[] = ":fin\n?$";
+  char init_ex_str[] = ":init\n?$";
+  regex_t abs_fin_ex;
   regex_t fin_ex;
   regex_t init_ex;
+  regcomp(&abs_fin_ex, abs_fin_ex_str, REG_EXTENDED|REG_NOSUB);
   regcomp(&init_ex, init_ex_str, REG_EXTENDED|REG_NOSUB);
   regcomp(&fin_ex, fin_ex_str, REG_EXTENDED|REG_NOSUB);
 
@@ -476,7 +566,11 @@ int check_cmd(char* line)
   {
     ret |= CLEAR_TRANSMIT;
   }
-  
+  if (regexec(&abs_fin_ex, line, 0, NULL, 0) == 0)
+  {
+    ret |= END_TRANSMIT;
+  }
+    
   return ret;
 }
 
@@ -506,7 +600,7 @@ int connect_socket(fifo_thread_t* fifo_print, const char* addr_str, const char* 
 
   sock = socket (AF_INET, SOCK_STREAM, 0);
   if (sock < 0)
-    erreur_IO("socket");
+    erreur_pthread_IO("socket");
 
   sprintf_fifo_thread(fifo_print,"%s: DNS resolving for %s, port %s\n", CMD, addr_str, port_str);
   adrServ = resolv(addr_str, port_str);
@@ -521,73 +615,40 @@ int connect_socket(fifo_thread_t* fifo_print, const char* addr_str, const char* 
   ret = 0;
   while(connect(sock, (struct sockaddr *)adrServ, sizeof(struct sockaddr_in)) < 0);
   if (ret < 0)
-    erreur_IO("connect");
+    erreur_pthread_IO("connect");
   sprintf_fifo_thread(fifo_print,"%s:.. connected\n", CMD);
   return sock;
 }
 
 // create a socket and open a server
-int create_socket(fifo_thread_t* fifo_print, const char *port_str)
+int create_socket(fifo_thread_t* fifo_print, const char *port_str, const int nb_max_client)
 {
-  char CMD[] ="serveur: socket";
+  char CMD[] ="server: socket";
 
-  int ecoute, ret;
-  struct sockaddr_in adrEcoute;
+  int sock, ret;
+  struct sockaddr_in adrsock;
   short listen_port = (short)atoi(port_str);
 
   sprintf_fifo_thread(fifo_print,"%s: creating a socket\n", CMD);
-  ecoute = socket (AF_INET, SOCK_STREAM, 0);
-  if (ecoute < 0)
-    erreur_IO("socket");
+  sock = socket (AF_INET, SOCK_STREAM, 0);
+  if (sock < 0)
+    erreur_pthread_IO("socket");
   
-  adrEcoute.sin_family = AF_INET;
-  adrEcoute.sin_addr.s_addr = INADDR_ANY;
-  adrEcoute.sin_port = htons(listen_port);
+  adrsock.sin_family = AF_INET;
+  adrsock.sin_addr.s_addr = INADDR_ANY;
+  adrsock.sin_port = htons(listen_port);
   sprintf_fifo_thread(fifo_print,"%s: binding to INADDR_ANY address on port %d\n", CMD, listen_port);
-  ret = bind (ecoute,  (struct sockaddr *)&adrEcoute, sizeof(adrEcoute));
+  ret = bind (sock,  (struct sockaddr *)&adrsock, sizeof(adrsock));
   if (ret < 0)
-    erreur_IO("bind");
+    erreur_pthread_IO("bind");
   
   sprintf_fifo_thread(fifo_print,"%s: listening to socket\n", CMD);
-  ret = listen (ecoute, 5);
+  ret = listen (sock, nb_max_client);
   if (ret < 0)
-    erreur_IO("listen");
+    erreur_pthread_IO("listen");
   
   sprintf_fifo_thread(fifo_print,"%s: accepting a connection\n", CMD);
   
-  return ecoute;
+  return sock;
 }
 
-
-// connect to a server
-void create_client( com_struct_t* cli)
-{
-
-  cli->sock = connect_socket(cli->print_buff, cli->dist_addr_str, cli->dist_port_str);
-
-
-  sprintf_fifo_thread(cli->print_buff,"client maker: connected to : adr %s, port %s\n",
-        cli->dist_addr_str,
-        cli->dist_port_str);
-
-
-}
-
-// create a server, blocking while waiting for a client
-int create_serveur(com_struct_t* serv)
-{
-
-  int ecoute = create_socket(serv->print_buff, serv->local_port_str);
-
-  struct sockaddr_in adrClient;
-  unsigned int lgAdrClient;
-  lgAdrClient = sizeof(adrClient);
-  serv->sock = accept(ecoute, (struct sockaddr *)&adrClient, &lgAdrClient);
-  if (serv->sock < 0)
-    erreur_IO("accept");
- // TODO get client adress an port info
-  sprintf_fifo_thread(serv->print_buff,"serveur maker: connected to : adr %s, listen_port %d\n",
-        stringIP(ntohl(adrClient.sin_addr.s_addr)),
-        ntohs(adrClient.sin_port));
-  return ecoute;
-}
