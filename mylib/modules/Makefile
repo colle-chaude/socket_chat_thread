@@ -1,9 +1,9 @@
-# lib : Fichier Makefile
+# Makefile
 #
 ROOT= ../..
 include ../../Makefile.inc
 
-LIBRARY=	../lib/libmelc.a
+LIBRARY=	../lib/libcolle.a
 MODULES_SRC=	$(wildcard *.c)
 MODULES_OBJ=	$(patsubst %.c,%.o,$(MODULES_SRC))
 

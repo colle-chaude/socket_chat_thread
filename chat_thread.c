@@ -1,10 +1,12 @@
-/* programme (c) M de Beaudrap
+/* programme (c) 
+author : Colle Chaude
 */
 
 #include <stdio.h>
 #include <stdarg.h>
 #include "pse.h"
 #include "fifo_thread_lib.h"
+#include "fifo_thread_sub_lib.h"
 #include <regex.h>
 #include <unistd.h>
 

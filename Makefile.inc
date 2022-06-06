@@ -6,15 +6,15 @@ PSE_LIB = ${PSE_DIR}/lib
 PSE_INCL_DIR = ${PSE_DIR}/include
 
 
-MELC_DIR = $(ROOT)/mylib
-MELC_BIN = ${MELC_DIR}/bin
-MELC_LIB = ${MELC_DIR}/lib
-MELC_INCL_DIR = ${MELC_DIR}/include
+COLLE_DIR = $(ROOT)/mylib
+COLLE_BIN = ${COLLE_DIR}/bin
+COLLE_LIB = ${COLLE_DIR}/lib
+COLLE_INCL_DIR = ${COLLE_DIR}/include
 
 
 
-CFLAGS = -g -I. -I${PSE_INCL_DIR} -I${MELC_INCL_DIR} -Wall 
+CFLAGS = -g -I. -I${PSE_INCL_DIR} -I${COLLE_INCL_DIR} -Wall 
 		
-LDLIBS = -L ${PSE_LIB} -lpse -L ${MELC_LIB} -lmelc -lm -pthread
+LDLIBS = -L ${PSE_LIB} -lpse -L ${COLLE_LIB} -lcolle -lm -pthread
 
 CC = gcc
